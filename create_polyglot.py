@@ -2,6 +2,7 @@ import chess
 import chess.pgn
 import chess.polyglot
 import datetime
+import sys
 
 MAX_BOOK_PLIES = 20
 MAX_BOOK_WEIGHT = 10000
@@ -105,4 +106,4 @@ def build_book_file(pgn_path, book_path):
     book.save_as_polyglot(book_path)
 
 if __name__ == "__main__":
-    build_book_file("filtered_960_bots_2200plus.pgn", "book.bin")
+    build_book_file("combined.pgn", "book.bin")
