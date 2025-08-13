@@ -1,11 +1,18 @@
 import chess
 import chess.pgn
 import chess.polyglot
-import datetime
-import sys
+import os
 
 MAX_BOOK_PLIES = 20
 MAX_BOOK_WEIGHT = 10000
+
+PGN_FILES = [
+    "MaggiChess16.pgn",
+    "NNUE_Drift.pgn",
+    "NimsiluBot.pgn",
+    "ToromBot.pgn",
+    "Endogenetic-Bot.pgn"
+]
 
 def format_zobrist_key_hex(zobrist_key):
     return f"{zobrist_key:016x}"
@@ -73,37 +80,62 @@ class LichessGame:
         return {"1-0": 2, "1/2-1/2": 1}.get(res, 0)
 
 def correct_castling_uci(uci, board):
-    if board.piece_at(chess.parse_square(uci[:2])).piece_type == chess.KING:
-        if uci == "e1g1": return "e1h1"
-        if uci == "e1c1": return "e1a1"
-        if uci == "e8g8": return "e8h8"
-        if uci == "e8c8": return "e8a8"
+    try:
+        if board.piece_at(chess.parse_square(uci[:2])).piece_type == chess.KING:
+            if uci == "e1g1": return "e1h1"
+            if uci == "e1c1": return "e1a1"
+            if uci == "e8g8": return "e8h8"
+            if uci == "e8c8": return "e8a8"
+    except Exception:
+        pass
     return uci
 
-def build_book_file(pgn_path, book_path):
+def build_book_file(pgn_files, book_path):
     book = Book()
-    with open(pgn_path) as pgn_file:
-        for i, game in enumerate(iter(lambda: chess.pgn.read_game(pgn_file), None), start=1):
-            if i % 100 == 0:
-                print(f"Processed {i} games")
-            ligame = LichessGame(game)
-            board = game.board()
-            score = ligame.score()
-            ply = 0
-            for move in game.mainline_moves():
-                if ply >= MAX_BOOK_PLIES:
-                    break
-                uci = correct_castling_uci(move.uci(), board)
-                zobrist_key_hex = get_zobrist_key_hex(board)
-                position = book.get_position(zobrist_key_hex)
-                bm = position.get_move(uci)
-                bm.move = chess.Move.from_uci(uci)
-                bm.weight += score if board.turn == chess.WHITE else (2 - score)
-                board.push(move)
-                ply += 1
+    total_games = 0
+
+    for pgn_path in pgn_files:
+        if not os.path.exists(pgn_path):
+            print(f"PGN file not found: {pgn_path}, skipping...")
+            continue
+
+        print(f"Processing PGN: {pgn_path}")
+        with open(pgn_path) as pgn_file:
+            for i, game in enumerate(iter(lambda: chess.pgn.read_game(pgn_file), None), start=1):
+                try:
+                    if game is None:
+                        continue
+
+                    total_games += 1
+                    if total_games % 100 == 0:
+                        print(f"Processed {total_games} games")
+
+                    board = game.board()  # Standard chess
+                    ligame = LichessGame(game)
+                    score = ligame.score()
+                    ply = 0
+                    for move in game.mainline_moves():
+                        if ply >= MAX_BOOK_PLIES:
+                            break
+                        try:
+                            uci = correct_castling_uci(move.uci(), board)
+                            zobrist_key_hex = get_zobrist_key_hex(board)
+                            position = book.get_position(zobrist_key_hex)
+                            bm = position.get_move(uci)
+                            bm.move = chess.Move.from_uci(uci)
+                            bm.weight += score if board.turn == chess.WHITE else (2 - score)
+                            board.push(move)
+                            ply += 1
+                        except Exception as e:
+                            print(f"Skipping invalid move in game {total_games}: {e}")
+                            break
+
+                except Exception as e:
+                    print(f"Skipping invalid game {total_games}: {e}")
+                    continue
 
     book.normalize_weights()
     book.save_as_polyglot(book_path)
 
 if __name__ == "__main__":
-    build_book_file("combined.pgn", "book.bin")
+    build_book_file(PGN_FILES, "book.bin")
