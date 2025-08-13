@@ -1,41 +1,38 @@
-name: Build .bin Book
+name: Build Polyglot Book
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  convert:
+  build-book:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Install Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-    - name: Install dependencies
-      run: |
-        pip install chess requests
+      - name: Install dependencies
+        run: |
+          pip install python-chess
 
-    - name: Fetch games and build PGN
-      run: python fetch_and_build.py
+      - name: Combine PGNs
+        run: |
+          cat MaggiChess16.pgn NNUE_Drift.pgn NimsiluBot.pgn ToromBot.pgn Endogenetic-Bot.pgn > combined.pgn
+          echo "Combined PGNs into combined.pgn"
 
-    - name: Create Polyglot book
-      run: python create_polyglot.py
+      - name: Build book
+        run: |
+          python create_polyglot.py
 
-    - name: Move .bin to engines/
-      run: |
-        mkdir -p engines
-        mv book.bin engines/
-
-    - name: Upload book.bin as artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: chess960-opening-book
-        path: engines/book.bin
-
-
-
+      - name: Upload book.bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: polyglot-book
+          path: book.bin
