@@ -44,15 +44,14 @@ jobs:
           mv engines/stockfish_* engines/stockfish
           chmod +x engines/stockfish
 
-      - name: Run Bot
+      - name: Run Bot and join tournament
         run: |
           echo "Starting bot..."
-          python3 -u user_interface.py tournament 6ZlnxTMZ &
+          echo "tournament tWjRtmJs" | python3 -u user_interface.py &
           PID=$!
-          
-          # Auto-exit after 350 minutes (so restart runs without overlap)
+
           ( sleep 20700 && echo "Time up. Killing bot..." && kill -SIGTERM $PID ) &
-          
+
           wait $PID
           echo "Bot ended cleanly."
 
