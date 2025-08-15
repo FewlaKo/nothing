@@ -1,10 +1,10 @@
-name: Add Suprabot Syzygy Tablebases
+name: Fetch All Suprabot Syzygy Tablebases
 
 on:
   workflow_dispatch:
 
 jobs:
-  add-syzygy:
+  fetch-syzygy:
     runs-on: ubuntu-latest
 
     steps:
@@ -14,11 +14,18 @@ jobs:
 
       - run: |
           cd engines/syzygy
-          wget -r -np -nH --cut-dirs=5 -A "*.rtbw,*.rtbz" https://github.com/suprateem-ux/suprabot/raw/main/engines/syzygy/
+          # Fetch list of files from Suprabot repo using GitHub API
+          repo_api="https://api.github.com/repos/suprateem-ux/suprabot/contents/engines/syzygy"
+          curl -s $repo_api | grep -oP '"download_url": "\K[^"]+' > urls.txt
+          # Download all files
+          while read url; do
+            wget "$url"
+          done < urls.txt
+          rm urls.txt
 
       - run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add engines/syzygy/*
-          git commit -m "Add actual Suprabot Syzygy binaries"
+          git commit -m "Add all Suprabot Syzygy tablebases binaries"
           git push origin main
