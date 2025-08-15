@@ -14,10 +14,11 @@ jobs:
 
       - run: |
           cd engines/syzygy
-          # Download all RTBW and RTBZ files from Suprabot repo
           wget -r -np -nH --cut-dirs=5 -A "*.rtbw,*.rtbz" https://github.com/suprateem-ux/suprabot/raw/main/engines/syzygy/
 
       - run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
           git add engines/syzygy/*
           git commit -m "Add actual Suprabot Syzygy binaries"
           git push origin main
