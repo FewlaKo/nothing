@@ -1,64 +1,55 @@
-name: Restore Syzygy Files
+name: Add Syzygy Tablebases
 
 on:
   workflow_dispatch:
 
 jobs:
-  restore_syzygy:
+  add-syzygy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout with Git LFS support
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Install tools
-        run: sudo apt update && sudo apt install -y jq coreutils
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-lfs unzip wget
+          git lfs install
 
-      - name: Create engines/syzygy directory
+      - name: Create syzygy folder
         run: mkdir -p engines/syzygy
 
-      - name: Get file list from source repo
-        id: list_files
-        run: |
-          echo "files<<EOF" >> "$GITHUB_OUTPUT"
-          curl -s https://api.github.com/repos/suprateem-ux/suprabot/contents/engines/syzygy \
-            | jq -r '.[] | select(.type == "file") | .name' \
-            >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Download Syzygy files to engines/syzygy/
-        run: |
-          base_url="https://raw.githubusercontent.com/suprateem-ux/suprabot/main/engines/syzygy"
-          while read -r file; do
-            curl -sSL "$base_url/$file" -o "engines/syzygy/$file"
-          done <<< "${{ steps.list_files.outputs.files }}"
-
-      - name: Verify and fix corrupted files
+      - name: Download Syzygy tablebases
         run: |
           cd engines/syzygy
-          base_url="https://raw.githubusercontent.com/suprateem-ux/suprabot/main/engines/syzygy"
-          if [ -f checksum.md5 ]; then
-            echo "Checking checksums..."
-            bad_files=$(md5sum -c checksum.md5 | grep -v OK | cut -d: -f1 || true)
-            for file in $bad_files; do
-              echo "Redownloading corrupted file: $file"
-              curl -sSL "$base_url/$file" -o "$file"
+          
+          # Define arrays of pieces and types
+          PIECES=("3-4" "5")
+          TYPES=("WDL" "DTZ")
+          
+          for p in "${PIECES[@]}"; do
+            for t in "${TYPES[@]}"; do
+              echo "Downloading $p/$t files..."
+              # Download all .zip files from Lichess tablebase
+              wget -r -np -nH --cut-dirs=3 -R "index.html*" "https://tablebase.lichess.ovh/tables/$p/$t/"
             done
-          else
-            echo "checksum.md5 not found — skipping verification"
-          fi
+          done
 
-      - name: Track Syzygy files with Git LFS
-        run: |
-          git lfs track "engines/syzygy/*.rtbw"
-          git lfs track "engines/syzygy/*.rtbz"
+          # Unzip all downloaded files and remove zips
+          find . -name "*.zip" -exec unzip -o {} \; -exec rm {} \;
 
-      - name: Commit and push Syzygy directory
+      - name: Track with Git LFS
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add engines/syzygy .gitattributes
-          git commit -m "Add verified Syzygy tablebase files" || echo "Nothing to commit"
-          git push
+          git lfs track "engines/syzygy/**"
+          git add .gitattributes
+
+      - name: Commit and push Syzygy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add engines/syzygy/*
+          git commit -m "Add full Syzygy tablebases (3-5 pieces, WDL + DTZ)"
+          git push origin main
