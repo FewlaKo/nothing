@@ -1,4 +1,4 @@
-name: Add Lichess OVH Standard Syzygy Tablebases
+name: Add Suprabot Syzygy Tablebases
 
 on:
   workflow_dispatch:
@@ -9,34 +9,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y git-lfs wget unzip
-          git lfs install
 
       - run: mkdir -p engines/syzygy
 
       - run: |
           cd engines/syzygy
-          for type in WDL DTZ; do
-            for pieces in 3 4 5; do
-              wget https://tablebase.lichess.ovh/tables/standard/${pieces}pieces/${type}/index.json -O index.json
-              cat index.json | grep -oP '"url":"\K[^"]+' > urls.txt
-              wget -i urls.txt
-              rm index.json urls.txt
-            done
-          done
+          # Download all RTBW and RTBZ files from Suprabot repo
+          wget -r -np -nH --cut-dirs=5 -A "*.rtbw,*.rtbz" https://github.com/suprateem-ux/suprabot/raw/main/engines/syzygy/
 
       - run: |
-          git lfs track "engines/syzygy/**"
-          git add .gitattributes
-
-      - env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
           git add engines/syzygy/*
-          git commit -m "Add Lichess OVH standard Syzygy tablebases 3-5 pieces WDL+DTZ"
+          git commit -m "Add actual Suprabot Syzygy binaries"
           git push origin main
