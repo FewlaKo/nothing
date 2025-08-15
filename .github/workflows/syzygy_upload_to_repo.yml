@@ -9,23 +9,27 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - run: mkdir -p engines/syzygy
 
       - run: |
           cd engines/syzygy
-          # Fetch list of files from Suprabot repo using GitHub API
           repo_api="https://api.github.com/repos/suprateem-ux/suprabot/contents/engines/syzygy"
           curl -s $repo_api | grep -oP '"download_url": "\K[^"]+' > urls.txt
-          # Download all files
           while read url; do
             wget "$url"
           done < urls.txt
           rm urls.txt
+
+      - run: git lfs install
 
       - run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add engines/syzygy/*
           git commit -m "Add all Suprabot Syzygy tablebases binaries"
-          git push origin main
+          git push https://$PAT_TOKEN@github.com/FunnyMicroOrganismLOL/Maggi.git HEAD:main
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
