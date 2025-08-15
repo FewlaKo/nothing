@@ -1,4 +1,4 @@
-name: Add Syzygy Tablebases
+name: Add Lichess OVH Standard Syzygy Tablebases
 
 on:
   workflow_dispatch:
@@ -8,48 +8,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           lfs: true
 
-      - name: Install dependencies
-        run: |
+      - run: |
           sudo apt-get update
-          sudo apt-get install -y git-lfs unzip wget
+          sudo apt-get install -y git-lfs wget unzip
           git lfs install
 
-      - name: Create syzygy folder
-        run: mkdir -p engines/syzygy
+      - run: mkdir -p engines/syzygy
 
-      - name: Download Syzygy tablebases
-        run: |
+      - run: |
           cd engines/syzygy
-          
-          # Define arrays of pieces and types
-          PIECES=("3-4" "5")
-          TYPES=("WDL" "DTZ")
-          
-          for p in "${PIECES[@]}"; do
-            for t in "${TYPES[@]}"; do
-              echo "Downloading $p/$t files..."
-              # Download all .zip files from Lichess tablebase
-              wget -r -np -nH --cut-dirs=3 -R "index.html*" "https://tablebase.lichess.ovh/tables/$p/$t/"
+          for type in WDL DTZ; do
+            for pieces in 3 4 5; do
+              wget https://tablebase.lichess.ovh/tables/standard/${pieces}pieces/${type}/index.json -O index.json
+              cat index.json | grep -oP '"url":"\K[^"]+' > urls.txt
+              wget -i urls.txt
+              rm index.json urls.txt
             done
           done
 
-          # Unzip all downloaded files and remove zips
-          find . -name "*.zip" -exec unzip -o {} \; -exec rm {} \;
-
-      - name: Track with Git LFS
-        run: |
+      - run: |
           git lfs track "engines/syzygy/**"
           git add .gitattributes
 
-      - name: Commit and push Syzygy
-        env:
+      - env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git add engines/syzygy/*
-          git commit -m "Add full Syzygy tablebases (3-5 pieces, WDL + DTZ)"
+          git commit -m "Add Lichess OVH standard Syzygy tablebases 3-5 pieces WDL+DTZ"
           git push origin main
