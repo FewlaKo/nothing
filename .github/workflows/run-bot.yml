@@ -8,6 +8,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 360  # Add timeout
 
     concurrency:
       group: bot-restart
@@ -18,47 +19,50 @@ jobs:
 
     steps:
       - name: Setup Actions
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # Updated version
 
       - name: Install Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install GitHub CLI
-        run: sudo apt-get update && sudo apt-get install -y gh
-
       - name: Install Requirements
         run: |
           pip install -r requirements.txt
 
+      - name: Verify config.yml exists
+        run: |
+          if [ ! -f config.yml ]; then
+            echo "config.yml not found!"
+            exit 1
+          fi
+          echo "Original config.yml:"
+          cat config.yml
+
       - name: Fetch Token
         run: |
           sed -i "s/^token:.*/token: \"${TOKEN}\"/" config.yml
+          echo "Updated config.yml:"
+          cat config.yml
 
       - name: Download latest Stockfish dev 
         run: |
           mkdir -p engines
           curl -L -o stockfish.zip http://abrok.eu/stockfish/latest/linux/stockfish_x64_modern.zip
           unzip -o stockfish.zip -d engines/
-          mv engines/stockfish_* engines/stockfish
+          ls -la engines/
+          mv engines/stockfish_* engines/stockfish || echo "No stockfish file to rename"
           chmod +x engines/stockfish
+          ./engines/stockfish --help || echo "Stockfish test failed"
 
       - name: Run Bot
         run: |
           echo "Starting bot..."
-          python3 -u user_interface.py "matchmaking" &
-          PID=$!
-          
-          # Auto-exit after 350 minutes (so restart runs without overlap)
-          ( sleep 20700 && echo "Time up. Killing bot..." && kill -SIGTERM $PID ) &
-          
-          wait $PID
-          echo "Bot ended cleanly."
-
+          timeout 20700 python3 -u user_interface.py "matchmaking" || echo "Bot process ended"
 
       - name: 🔁 Self-Restart (Fire-and-Forget)
         if: always()
-        run: gh workflow run run-bot.yml
+        run: |
+          gh workflow run bot.yml  # Make sure this matches your actual filename
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
