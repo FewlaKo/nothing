@@ -202,7 +202,6 @@ class API:
     @retry(**JSON_RETRY_CONDITIONS)
     async def get_online_bots(self) -> list[dict[str, Any]]:
         async with self.lichess_session.get('/api/bot/online') as response:
-            return [json.loads(line) async for line in response.content if line.strip()]
 
     async def get_opening_explorer(self,
                                    username: str,
