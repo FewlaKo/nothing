@@ -184,9 +184,10 @@ class API:
             print(f'EGTB: Timed out after {timeout} second(s).')
 
     @retry(**JSON_RETRY_CONDITIONS)
-    async def get_event_stream(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
-        async with self.lichess_session.get('/api/stream/event',
-                                            timeout=aiohttp.ClientTimeout(sock_connect=5.0)) as response:
+    async def get_online_bots(self) -> list[dict[str, Any]]:
+        async with self.lichess_session.get('/api/bot/online') as response:
+            return [json.loads(line) async for line in response.content if line.strip()]
+          
             async for line in response.content:
                 if line.strip():
                     await queue.put(json.loads(line))
