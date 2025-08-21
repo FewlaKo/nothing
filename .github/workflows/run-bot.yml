@@ -8,127 +8,56 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+
+    concurrency:
+      group: bot-restart
+      cancel-in-progress: false
 
     env:
       TOKEN: ${{ secrets.TOKEN }}
 
     steps:
       - name: Setup Actions
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Install Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Debug Environment
-        run: |
-          echo "=== DEBUGGING INFORMATION ==="
-          echo "Current directory: $(pwd)"
-          echo "Repository contents:"
-          ls -la
-          echo "Python version: $(python3 --version)"
-          echo "Pip version: $(pip --version)"
-          echo "TOKEN set: ${{ secrets.TOKEN != '' }}"
-          echo "============================="
+      - name: Install GitHub CLI
+        run: sudo apt-get update && sudo apt-get install -y gh
 
       - name: Install Requirements
         run: |
-          echo "Installing Python dependencies..."
-          pip install --upgrade pip
           pip install -r requirements.txt
-          echo "Installed packages:"
-          pip list
 
-      - name: Verify Files
+      - name: Fetch Token
         run: |
-          echo "Checking required files..."
-          if [ ! -f config.yml ]; then
-            echo "ERROR: config.yml not found!"
-            exit 1
-          fi
-          if [ ! -f user_interface.py ]; then
-            echo "ERROR: user_interface.py not found!"
-            exit 1
-          fi
-          echo "All required files found."
-
-      - name: Configure Token
-        run: |
-          echo "Configuring token in config.yml..."
-          if [ -z "$TOKEN" ]; then
-            echo "ERROR: TOKEN secret is not set!"
-            exit 1
-          fi
-          # Backup original config
-          cp config.yml config.yml.backup
-          # Update token
           sed -i "s/^token:.*/token: \"${TOKEN}\"/" config.yml
-          echo "Token configured successfully."
 
-      - name: Download Stockfish
+      - name: Download latest Stockfish dev 
         run: |
-          echo "Setting up Stockfish engine..."
           mkdir -p engines
-          
-          # Download with better error handling
-          if ! curl -L -f -o stockfish.zip "http://abrok.eu/stockfish/latest/linux/stockfish_x64_modern.zip"; then
-            echo "ERROR: Failed to download Stockfish!"
-            exit 1
-          fi
-          
-          # Extract
+          curl -L -o stockfish.zip http://abrok.eu/stockfish/latest/linux/stockfish_x64_modern.zip
           unzip -o stockfish.zip -d engines/
-          
-          # Find and setup stockfish binary
-          stockfish_file=$(find engines/ -name "*stockfish*" -type f | head -1)
-          if [ -n "$stockfish_file" ]; then
-            mv "$stockfish_file" engines/stockfish
-          else
-            echo "ERROR: Stockfish binary not found after extraction!"
-            ls -la engines/
-            exit 1
-          fi
-          
+          mv engines/stockfish_* engines/stockfish
           chmod +x engines/stockfish
-          
-          # Test stockfish
-          echo "Testing Stockfish..."
-          echo "quit" | ./engines/stockfish || echo "Stockfish test completed"
-          echo "Stockfish setup complete."
 
       - name: Run Bot
         run: |
-          echo "Starting chess bot..."
-          echo "Current time: $(date)"
-          
-          # Start bot with proper error handling
+          echo "Starting bot..."
           python3 -u user_interface.py "matchmaking" &
-          BOT_PID=$!
+          PID=$!
           
-          echo "Bot started with PID: $BOT_PID"
+          # Auto-exit after 350 minutes (so restart runs without overlap)
+          ( sleep 20700 && echo "Time up. Killing bot..." && kill -SIGTERM $PID ) &
           
-          # Wait for bot with timeout (5 hours 45 minutes = 20700 seconds)
-          timeout 20700 wait $BOT_PID || {
-            echo "Bot process ended or timed out"
-            kill -TERM $BOT_PID 2>/dev/null || true
-          }
-          
-          echo "Bot session completed at: $(date)"
+          wait $PID
+          echo "Bot ended cleanly."
 
-      - name: Cleanup
+      - name: 🔁 Self-Restart (Fire-and-Forget)
         if: always()
-        run: |
-          echo "Cleaning up processes..."
-          pkill -f "user_interface.py" || true
-          echo "Cleanup completed."
-
-      - name: Self-Restart
-        if: always()
-        run: |
-          echo "Scheduling next bot run..."
-          gh workflow run bot.yml
-          echo "Next run scheduled successfully."
+        run: gh workflow run run-bot.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
