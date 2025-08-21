@@ -10,10 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
-    concurrency:
-      group: bot-restart-${{ github.run_id }}  # Make each run unique
-      cancel-in-progress: false
-
     env:
       TOKEN: ${{ secrets.TOKEN }}
 
@@ -26,58 +22,113 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Debug - List files
+      - name: Debug Environment
         run: |
+          echo "=== DEBUGGING INFORMATION ==="
+          echo "Current directory: $(pwd)"
           echo "Repository contents:"
           ls -la
-          echo "Config file exists:"
-          ls -la config.yml || echo "config.yml not found"
-          echo "Requirements file exists:"
-          ls -la requirements.txt || echo "requirements.txt not found"
+          echo "Python version: $(python3 --version)"
+          echo "Pip version: $(pip --version)"
+          echo "TOKEN set: ${{ secrets.TOKEN != '' }}"
+          echo "============================="
 
       - name: Install Requirements
         run: |
+          echo "Installing Python dependencies..."
+          pip install --upgrade pip
           pip install -r requirements.txt
+          echo "Installed packages:"
+          pip list
 
-      - name: Verify and Update Token
+      - name: Verify Files
         run: |
-          echo "Original config.yml:"
-          head -5 config.yml
+          echo "Checking required files..."
+          if [ ! -f config.yml ]; then
+            echo "ERROR: config.yml not found!"
+            exit 1
+          fi
+          if [ ! -f user_interface.py ]; then
+            echo "ERROR: user_interface.py not found!"
+            exit 1
+          fi
+          echo "All required files found."
+
+      - name: Configure Token
+        run: |
+          echo "Configuring token in config.yml..."
+          if [ -z "$TOKEN" ]; then
+            echo "ERROR: TOKEN secret is not set!"
+            exit 1
+          fi
+          # Backup original config
+          cp config.yml config.yml.backup
+          # Update token
           sed -i "s/^token:.*/token: \"${TOKEN}\"/" config.yml
-          echo "Updated config.yml (first 5 lines):"
-          head -5 config.yml
+          echo "Token configured successfully."
 
-      - name: Download latest Stockfish dev 
+      - name: Download Stockfish
         run: |
+          echo "Setting up Stockfish engine..."
           mkdir -p engines
-          echo "Downloading Stockfish..."
-          curl -L -o stockfish.zip http://abrok.eu/stockfish/latest/linux/stockfish_x64_modern.zip
-          echo "Extracting..."
+          
+          # Download with better error handling
+          if ! curl -L -f -o stockfish.zip "http://abrok.eu/stockfish/latest/linux/stockfish_x64_modern.zip"; then
+            echo "ERROR: Failed to download Stockfish!"
+            exit 1
+          fi
+          
+          # Extract
           unzip -o stockfish.zip -d engines/
-          echo "Files in engines directory:"
-          ls -la engines/
-          # Find the stockfish binary
-          find engines/ -name "*stockfish*" -type f
-          mv engines/stockfish_* engines/stockfish 2>/dev/null || echo "No stockfish file to rename"
+          
+          # Find and setup stockfish binary
+          stockfish_file=$(find engines/ -name "*stockfish*" -type f | head -1)
+          if [ -n "$stockfish_file" ]; then
+            mv "$stockfish_file" engines/stockfish
+          else
+            echo "ERROR: Stockfish binary not found after extraction!"
+            ls -la engines/
+            exit 1
+          fi
+          
           chmod +x engines/stockfish
-          echo "Testing Stockfish:"
-          ./engines/stockfish quit || echo "Stockfish test completed"
+          
+          # Test stockfish
+          echo "Testing Stockfish..."
+          echo "quit" | ./engines/stockfish || echo "Stockfish test completed"
+          echo "Stockfish setup complete."
 
       - name: Run Bot
         run: |
-          echo "Starting bot..."
-          echo "Python version: $(python3 --version)"
-          echo "Current directory: $(pwd)"
-          echo "Files in current directory:"
-          ls -la
+          echo "Starting chess bot..."
+          echo "Current time: $(date)"
           
-          # Run with timeout
-          timeout 20700 python3 -u user_interface.py "matchmaking" || echo "Bot process ended (exit code: $?)"
+          # Start bot with proper error handling
+          python3 -u user_interface.py "matchmaking" &
+          BOT_PID=$!
+          
+          echo "Bot started with PID: $BOT_PID"
+          
+          # Wait for bot with timeout (5 hours 45 minutes = 20700 seconds)
+          timeout 20700 wait $BOT_PID || {
+            echo "Bot process ended or timed out"
+            kill -TERM $BOT_PID 2>/dev/null || true
+          }
+          
+          echo "Bot session completed at: $(date)"
 
-      - name: 🔁 Self-Restart (Fire-and-Forget)
+      - name: Cleanup
         if: always()
         run: |
-          echo "Triggering workflow restart..."
-          gh workflow run bot.yml  # Make sure this matches your actual filename
+          echo "Cleaning up processes..."
+          pkill -f "user_interface.py" || true
+          echo "Cleanup completed."
+
+      - name: Self-Restart
+        if: always()
+        run: |
+          echo "Scheduling next bot run..."
+          gh workflow run bot.yml
+          echo "Next run scheduled successfully."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
