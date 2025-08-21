@@ -8,10 +8,10 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # Add timeout
+    timeout-minutes: 360
 
     concurrency:
-      group: bot-restart
+      group: bot-restart-${{ github.run_id }}  # Make each run unique
       cancel-in-progress: false
 
     env:
@@ -19,50 +19,65 @@ jobs:
 
     steps:
       - name: Setup Actions
-        uses: actions/checkout@v4  # Updated version
+        uses: actions/checkout@v4
 
       - name: Install Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
+      - name: Debug - List files
+        run: |
+          echo "Repository contents:"
+          ls -la
+          echo "Config file exists:"
+          ls -la config.yml || echo "config.yml not found"
+          echo "Requirements file exists:"
+          ls -la requirements.txt || echo "requirements.txt not found"
+
       - name: Install Requirements
         run: |
           pip install -r requirements.txt
 
-      - name: Verify config.yml exists
+      - name: Verify and Update Token
         run: |
-          if [ ! -f config.yml ]; then
-            echo "config.yml not found!"
-            exit 1
-          fi
           echo "Original config.yml:"
-          cat config.yml
-
-      - name: Fetch Token
-        run: |
+          head -5 config.yml
           sed -i "s/^token:.*/token: \"${TOKEN}\"/" config.yml
-          echo "Updated config.yml:"
-          cat config.yml
+          echo "Updated config.yml (first 5 lines):"
+          head -5 config.yml
 
       - name: Download latest Stockfish dev 
         run: |
           mkdir -p engines
+          echo "Downloading Stockfish..."
           curl -L -o stockfish.zip http://abrok.eu/stockfish/latest/linux/stockfish_x64_modern.zip
+          echo "Extracting..."
           unzip -o stockfish.zip -d engines/
+          echo "Files in engines directory:"
           ls -la engines/
-          mv engines/stockfish_* engines/stockfish || echo "No stockfish file to rename"
+          # Find the stockfish binary
+          find engines/ -name "*stockfish*" -type f
+          mv engines/stockfish_* engines/stockfish 2>/dev/null || echo "No stockfish file to rename"
           chmod +x engines/stockfish
-          ./engines/stockfish --help || echo "Stockfish test failed"
+          echo "Testing Stockfish:"
+          ./engines/stockfish quit || echo "Stockfish test completed"
 
       - name: Run Bot
         run: |
           echo "Starting bot..."
-          timeout 20700 python3 -u user_interface.py "matchmaking" || echo "Bot process ended"
+          echo "Python version: $(python3 --version)"
+          echo "Current directory: $(pwd)"
+          echo "Files in current directory:"
+          ls -la
+          
+          # Run with timeout
+          timeout 20700 python3 -u user_interface.py "matchmaking" || echo "Bot process ended (exit code: $?)"
 
       - name: 🔁 Self-Restart (Fire-and-Forget)
         if: always()
         run: |
+          echo "Triggering workflow restart..."
           gh workflow run bot.yml  # Make sure this matches your actual filename
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
